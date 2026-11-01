@@ -4,6 +4,7 @@ import numpy as np
 from src.metrics import dice_score, hausdorff95, volume_similarity, score_labels
 from src.segmenters import DummySegmenter, get_segmenter
 from src.benchmark import benchmark_cases
+from src.qc import save_overlay
 
 
 def _ball(shape=(40, 40, 32), r=10, seed=0):
@@ -69,3 +70,20 @@ def test_get_segmenter():
         pass
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_save_overlay_writes_png(tmp_path):
+    # overlay QC was untested; run it on a small synthetic volume and
+    # check a valid PNG lands on disk (parent dirs created on demand)
+    rng = np.random.default_rng(2)
+    shape = (32, 32, 24)
+    image = rng.normal(50, 10, shape).astype(np.float32)
+    zz, yy, xx = np.mgrid[0:shape[0], 0:shape[1], 0:shape[2]]
+    ball = ((xx - 16) ** 2 + (yy - 16) ** 2 + (zz - 12) ** 2) < 64
+    out = tmp_path / "nested" / "qc" / "overlay.png"
+    result = save_overlay(image, ball, ball, str(out), n_slices=3)
+    assert result.exists()
+    assert result.stat().st_size > 0
+    with open(result, "rb") as f:
+        magic = f.read(8)
+    assert magic == b"\x89PNG\r\n\x1a\n", "output is not a PNG"

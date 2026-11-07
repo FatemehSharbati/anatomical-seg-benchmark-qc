@@ -1,9 +1,11 @@
 """Smoke tests on synthetic data — no downloads needed."""
+import csv
+
 import numpy as np
 
 from src.metrics import dice_score, hausdorff95, volume_similarity, score_labels
 from src.segmenters import DummySegmenter, get_segmenter
-from src.benchmark import benchmark_cases
+from src.benchmark import benchmark_cases, write_csv, write_summary
 from src.qc import save_overlay
 
 
@@ -87,3 +89,34 @@ def test_save_overlay_writes_png(tmp_path):
     with open(result, "rb") as f:
         magic = f.read(8)
     assert magic == b"\x89PNG\r\n\x1a\n", "output is not a PNG"
+
+
+def _summary_rows():
+    # label 1: hd95 NaN on one case; label 2: hd95 NaN on every case
+    return [
+        {"case": "c0", "label": 1, "dice": 0.9, "hd95": 1.5, "vol_sim": 0.95},
+        {"case": "c1", "label": 1, "dice": 0.8, "hd95": float("nan"), "vol_sim": 0.9},
+        {"case": "c0", "label": 2, "dice": 1.0, "hd95": float("nan"), "vol_sim": 1.0},
+    ]
+
+
+def test_write_csv_roundtrip(tmp_path):
+    # write_csv was the only untested writer the example runner relies on
+    out_csv = tmp_path / "nested" / "metrics.csv"
+    result = write_csv(_summary_rows(), out_csv)
+    assert result.exists()
+    with open(result, newline="") as f:
+        saved = list(csv.DictReader(f))
+    assert [r["case"] for r in saved] == ["c0", "c1", "c0"]
+    assert saved[0]["label"] == "1" and float(saved[0]["dice"]) == 0.9
+    assert saved[1]["hd95"] == "nan"
+
+
+def test_write_summary_drops_nan(tmp_path):
+    # a label with hd95 NaN on every case must show "n/a", not crash the
+    # mean/std; a single non-NaN value still reports its mean
+    out_md = tmp_path / "summary.md"
+    result = write_summary(_summary_rows(), out_md)
+    text = result.read_text()
+    assert "| 1 | 2 | 0.850±0.071 | 1.500±0.000 | 0.925±0.035 |" in text
+    assert "| 2 | 1 | 1.000±0.000 | n/a | 1.000±0.000 |" in text

@@ -3,10 +3,19 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 
+def _check_same_shape(pred, target, fn_name):
+    """Fail loudly instead of silently broadcasting mismatched masks."""
+    if pred.shape != target.shape:
+        raise ValueError(
+            f"{fn_name}: pred and target shapes differ: {pred.shape} vs {target.shape}"
+        )
+
+
 def dice_score(pred, target):
     """Dice coefficient for two binary masks. Empty/empty -> 1.0."""
     pred = np.asarray(pred, dtype=bool)
     target = np.asarray(target, dtype=bool)
+    _check_same_shape(pred, target, "dice_score")
     inter = np.logical_and(pred, target).sum()
     denom = pred.sum() + target.sum()
     if denom == 0:
@@ -31,9 +40,16 @@ def hausdorff95(pred, target, spacing=(1.0, 1.0, 1.0)):
     """95th-percentile Hausdorff distance in mm. NaN if either mask is empty."""
     pred = np.asarray(pred, dtype=bool)
     target = np.asarray(target, dtype=bool)
+    _check_same_shape(pred, target, "hausdorff95")
+    if pred.ndim != 3:
+        raise ValueError(f"hausdorff95: expected 3D masks, got {pred.ndim}D")
+    spacing = np.asarray(spacing, dtype=float)
+    if spacing.shape != (3,):
+        raise ValueError(f"hausdorff95: spacing must have 3 values, got {spacing.shape}")
+    if np.any(spacing <= 0):
+        raise ValueError(f"hausdorff95: spacing must be positive, got {spacing}")
     if not pred.any() or not target.any():
         return float("nan")
-    spacing = np.asarray(spacing, dtype=float)
     s_pred = _surface_voxels(pred) * spacing
     s_target = _surface_voxels(target) * spacing
     # subsample for speed on large surfaces
@@ -49,8 +65,11 @@ def hausdorff95(pred, target, spacing=(1.0, 1.0, 1.0)):
 
 def volume_similarity(pred, target):
     """1 - |V_pred - V_target| / (V_pred + V_target). Empty/empty -> 1.0."""
-    vp = float(np.asarray(pred, dtype=bool).sum())
-    vt = float(np.asarray(target, dtype=bool).sum())
+    pred = np.asarray(pred, dtype=bool)
+    target = np.asarray(target, dtype=bool)
+    _check_same_shape(pred, target, "volume_similarity")
+    vp = float(pred.sum())
+    vt = float(target.sum())
     if vp + vt == 0:
         return 1.0
     return float(1.0 - abs(vp - vt) / (vp + vt))
@@ -63,6 +82,7 @@ def score_labels(pred_labels, target_labels, spacing=(1.0, 1.0, 1.0)):
     """
     pred_labels = np.asarray(pred_labels)
     target_labels = np.asarray(target_labels)
+    _check_same_shape(pred_labels, target_labels, "score_labels")
     ids = sorted(set(np.unique(pred_labels).tolist()) | set(np.unique(target_labels).tolist()))
     ids = [i for i in ids if i != 0]
     out = {}

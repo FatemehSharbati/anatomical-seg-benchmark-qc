@@ -2,6 +2,7 @@
 import csv
 
 import numpy as np
+import pytest
 
 from src.metrics import dice_score, hausdorff95, volume_similarity, score_labels
 from src.segmenters import DummySegmenter, get_segmenter
@@ -41,6 +42,31 @@ def test_volume_similarity():
     m = _ball()
     assert volume_similarity(m, m) == 1.0
     assert 0.0 <= volume_similarity(m, np.zeros_like(m)) <= 1.0
+
+
+def test_metrics_reject_shape_mismatch():
+    # mismatched shapes used to broadcast silently (or fail cryptically
+    # inside cdist); every public metric must fail loudly instead
+    small = np.zeros((8, 8, 8), dtype=bool)
+    big = np.zeros((8, 8, 9), dtype=bool)
+    with pytest.raises(ValueError, match="shapes differ"):
+        dice_score(small, big)
+    with pytest.raises(ValueError, match="shapes differ"):
+        volume_similarity(small, big)
+    with pytest.raises(ValueError, match="shapes differ"):
+        hausdorff95(small, big)
+    with pytest.raises(ValueError, match="shapes differ"):
+        score_labels(small.astype(np.int16), big.astype(np.int16))
+
+
+def test_hd95_rejects_bad_spacing_and_2d():
+    m = _ball()
+    with pytest.raises(ValueError, match="spacing must have 3 values"):
+        hausdorff95(m, m, spacing=(1.0, 1.0))
+    with pytest.raises(ValueError, match="spacing must be positive"):
+        hausdorff95(m, m, spacing=(1.0, 0.0, 1.0))
+    with pytest.raises(ValueError, match="expected 3D masks"):
+        hausdorff95(np.zeros((8, 8), dtype=bool), np.zeros((8, 8), dtype=bool))
 
 
 def test_score_labels_multilabel():
